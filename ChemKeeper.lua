@@ -5,6 +5,12 @@ ChemKeeper = {}
 local CK = ChemKeeper
 local ICON_PATH = "Interface\\Icons\\INV_Potion_127"
 local CATALOG_ROW_HEIGHT = 30
+local ACTIVE_ROW_HEIGHT = 24
+local ACTIVE_VISIBLE_ROWS = 18
+local OVERVIEW_ROW_HEIGHT = 20
+local OVERVIEW_VISIBLE_ROWS = 19
+local MIN_FRAME_WIDTH = 860
+local MIN_FRAME_HEIGHT = 620
 
 local MASTER_ITEMS = {
   { itemID = 13512, label = "Flask of Supreme Power", category = "Spell", stack = 20 },
@@ -96,7 +102,7 @@ local MASTER_ITEMS = {
   { itemID = 13810, label = "Blessed Sunfruit", category = "Food/Drink", stack = 20 },
   { itemID = 13813, label = "Blessed Sunfruit Juice", category = "Food/Drink", stack = 20 },
   { itemID = 13931, label = "Nightfin Soup", category = "Food/Drink", stack = 20 },
-  { itemID = 83309, label = "Herbal Salad", category = "Food/Drink", stack = 20 },
+  { itemID = 83309, label = "Empowering Herbal Salad", category = "Food/Drink", stack = 20 },
   { itemID = 21217, label = "Sagefish Delight", category = "Food/Drink", stack = 20 },
   { itemID = 51717, label = "Hardened Mushroom", category = "Food/Drink", stack = 20 },
   { itemID = 53015, label = "Gurubashi Gumbo", category = "Food/Drink", stack = 20 },
@@ -114,6 +120,80 @@ local MASTER_ITEMS = {
   { itemID = 13928, label = "Grilled Squid", category = "Food/Drink", stack = 20 },
   { itemID = 12217, label = "Dragonbreath Chili", category = "Food/Drink", stack = 20 },
   { itemID = 14530, label = "Heavy Runecloth Bandage", category = "Bandages", stack = 20 },
+}
+
+local DEFAULT_PROFILE_TEMPLATES = {
+  {
+    key = "HEALER",
+    name = "HEALER",
+    items = {
+      { itemID = 20748, target = 2 },
+      { itemID = 8423, target = 10 },
+      { itemID = 60978, target = 20 },
+      { itemID = 61224, target = 10 },
+      { itemID = 3825, target = 10 },
+      { itemID = 83309, target = 20 },
+      { itemID = 13511, target = 5 },
+      { itemID = 13461, target = 10 },
+      { itemID = 13457, target = 10 },
+      { itemID = 13456, target = 10 },
+      { itemID = 13458, target = 10 },
+      { itemID = 13459, target = 10 },
+      { itemID = 20007, target = 10 },
+      { itemID = 13931, target = 20 },
+      { itemID = 9030, target = 10 },
+      { itemID = 20079, target = 2 },
+    },
+  },
+  {
+    key = "SPDTANK",
+    name = "SPDTANK",
+    items = {
+      { itemID = 20749, target = 10 },
+      { itemID = 47412, target = 10 },
+      { itemID = 47414, target = 10 },
+      { itemID = 47410, target = 10 },
+      { itemID = 60977, target = 20 },
+      { itemID = 3825, target = 10 },
+      { itemID = 13445, target = 10 },
+      { itemID = 13512, target = 5 },
+      { itemID = 13510, target = 5 },
+      { itemID = 22682, target = 20 },
+      { itemID = 13457, target = 10 },
+      { itemID = 13456, target = 10 },
+      { itemID = 13458, target = 10 },
+      { itemID = 13459, target = 10 },
+      { itemID = 13455, target = 10 },
+      { itemID = 8412, target = 20 },
+      { itemID = 51717, target = 20 },
+      { itemID = 12450, target = 20 },
+      { itemID = 20079, target = 5 },
+    },
+  },
+  {
+    key = "PHYSTANK",
+    name = "PHYSTANK",
+    items = {
+      { itemID = 18262, target = 20 },
+      { itemID = 3825, target = 10 },
+      { itemID = 9206, target = 10 },
+      { itemID = 13445, target = 10 },
+      { itemID = 13452, target = 10 },
+      { itemID = 13510, target = 5 },
+      { itemID = 22682, target = 20 },
+      { itemID = 13457, target = 10 },
+      { itemID = 13456, target = 10 },
+      { itemID = 13458, target = 10 },
+      { itemID = 13459, target = 10 },
+      { itemID = 13455, target = 10 },
+      { itemID = 8412, target = 20 },
+      { itemID = 51717, target = 20 },
+      { itemID = 12450, target = 20 },
+      { itemID = 51720, target = 20 },
+      { itemID = 20079, target = 5 },
+      { itemID = 12820, target = 20 },
+    },
+  },
 }
 
 local function tcount(tbl)
@@ -168,6 +248,61 @@ function CK:Print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cff6bd1ffChemKeeper|r: " .. msg)
 end
 
+function CK:FindProfileByTemplateKey(templateKey)
+  local i
+  for i = 1, table.getn(ChemKeeperDB.profiles or {}) do
+    if ChemKeeperDB.profiles[i].templateKey == templateKey then
+      return ChemKeeperDB.profiles[i], i
+    end
+  end
+  return nil, nil
+end
+
+function CK:CreateProfileFromTemplate(template, shouldSelect)
+  if not template then
+    return nil
+  end
+
+  local profile = {
+    id = ChemKeeperDB.nextProfileId,
+    name = template.name,
+    templateKey = template.key,
+    items = copyArrayOfTables(template.items or {}),
+  }
+
+  ChemKeeperDB.nextProfileId = ChemKeeperDB.nextProfileId + 1
+  table.insert(ChemKeeperDB.profiles, profile)
+
+  local i
+  for i = 1, table.getn(profile.items) do
+    self:PrimeItemMeta(profile.items[i].itemID)
+  end
+
+  if shouldSelect then
+    ChemKeeperDB.selectedProfileId = profile.id
+  end
+
+  return profile
+end
+
+function CK:EnsureDefaultProfiles()
+  if not ChemKeeperDB.seededTemplates then
+    ChemKeeperDB.seededTemplates = {}
+  end
+
+  local i
+  for i = 1, table.getn(DEFAULT_PROFILE_TEMPLATES) do
+    local template = DEFAULT_PROFILE_TEMPLATES[i]
+    if not ChemKeeperDB.seededTemplates[template.key] then
+      local existing = self:FindProfileByTemplateKey(template.key)
+      if not existing then
+        self:CreateProfileFromTemplate(template, nil)
+      end
+      ChemKeeperDB.seededTemplates[template.key] = 1
+    end
+  end
+end
+
 function CK:EnsureDB()
   if not ChemKeeperDB then
     ChemKeeperDB = {}
@@ -183,33 +318,31 @@ function CK:EnsureDB()
       relativePoint = "CENTER",
       x = 0,
       y = 0,
-      width = 760,
-      height = 560,
+      width = MIN_FRAME_WIDTH,
+      height = MIN_FRAME_HEIGHT,
     }
   end
 
-  if not ChemKeeperDB.activeItems then
-    ChemKeeperDB.activeItems = {}
-  end
+  ChemKeeperDB.window.width = math.max(tonumber(ChemKeeperDB.window.width) or MIN_FRAME_WIDTH, MIN_FRAME_WIDTH)
+  ChemKeeperDB.window.height = math.max(tonumber(ChemKeeperDB.window.height) or MIN_FRAME_HEIGHT, MIN_FRAME_HEIGHT)
 
-  if not ChemKeeperDB.itemMeta then
-    ChemKeeperDB.itemMeta = {}
-  end
-
-  local normalizedActive = {}
-  local i
-  for i = 1, table.getn(ChemKeeperDB.activeItems) do
-    local entry = ChemKeeperDB.activeItems[i]
-    local itemID = tonumber(entry.itemID)
-    local target = tonumber(entry.target) or 0
-    if itemID then
-      table.insert(normalizedActive, {
-        itemID = itemID,
-        target = clampNumber(target, 0, 999),
-      })
+    if not ChemKeeperDB.itemMeta then
+      ChemKeeperDB.itemMeta = {}
     end
+
+    if not ChemKeeperDB.seededTemplates then
+      ChemKeeperDB.seededTemplates = {}
+    end
+
+    if not ChemKeeperDB.profiles then
+      ChemKeeperDB.profiles = {}
   end
-  ChemKeeperDB.activeItems = normalizedActive
+  if not ChemKeeperDB.nextProfileId then
+    ChemKeeperDB.nextProfileId = 1
+  end
+  if not ChemKeeperDB.selectedProfileId then
+    ChemKeeperDB.selectedProfileId = 1
+  end
 
   local normalizedMeta = {}
   local key, meta
@@ -224,6 +357,72 @@ function CK:EnsureDB()
     end
   end
   ChemKeeperDB.itemMeta = normalizedMeta
+
+  local function normalizeItems(sourceItems)
+    local normalizedItems = {}
+    local i
+    for i = 1, table.getn(sourceItems or {}) do
+      local entry = sourceItems[i]
+      local itemID = tonumber(entry.itemID)
+      local target = tonumber(entry.target) or 0
+      if itemID then
+        table.insert(normalizedItems, {
+          itemID = itemID,
+          target = clampNumber(target, 0, 999),
+        })
+      end
+    end
+    return normalizedItems
+  end
+
+    if table.getn(ChemKeeperDB.profiles) == 0 then
+      local migratedItems = normalizeItems(ChemKeeperDB.activeItems or {})
+
+      ChemKeeperDB.profiles[1] = {
+        id = 1,
+        name = "Profile1",
+        items = {},
+      }
+      ChemKeeperDB.selectedProfileId = 1
+      ChemKeeperDB.nextProfileId = 2
+
+      if table.getn(migratedItems) > 0 then
+        ChemKeeperDB.profiles[2] = {
+          id = 2,
+          name = "Custom",
+          items = migratedItems,
+        }
+        ChemKeeperDB.nextProfileId = 3
+      end
+    else
+    local normalizedProfiles = {}
+    local maxId = 0
+    local i
+    for i = 1, table.getn(ChemKeeperDB.profiles) do
+      local profile = ChemKeeperDB.profiles[i]
+      local id = tonumber(profile.id) or i
+      if id > maxId then
+        maxId = id
+      end
+        table.insert(normalizedProfiles, {
+          id = id,
+          name = profile.name or ("Profile " .. id),
+          templateKey = profile.templateKey,
+          items = normalizeItems(profile.items),
+        })
+      end
+    ChemKeeperDB.profiles = normalizedProfiles
+    if ChemKeeperDB.nextProfileId <= maxId then
+      ChemKeeperDB.nextProfileId = maxId + 1
+    end
+  end
+
+  ChemKeeperDB.activeItems = nil
+  self:EnsureDefaultProfiles()
+
+  if not self:GetProfileById(ChemKeeperDB.selectedProfileId) then
+    ChemKeeperDB.selectedProfileId = ChemKeeperDB.profiles[1].id
+  end
 end
 
 function CK:GetItemLabel(itemID)
@@ -273,11 +472,163 @@ function CK:GetItemStackSize(itemID)
   return 20
 end
 
+function CK:GetLogicalItemCount(itemID, containerCount)
+  local count = tonumber(containerCount) or 1
+  local stackSize = self:GetItemStackSize(itemID)
+
+  if stackSize <= 1 then
+    return 1
+  end
+
+  if count < 1 then
+    return 1
+  end
+
+  return count
+end
+
+function CK:GetProfileById(profileId)
+  profileId = tonumber(profileId)
+  local i
+  for i = 1, table.getn(ChemKeeperDB.profiles or {}) do
+    if tonumber(ChemKeeperDB.profiles[i].id) == profileId then
+      return ChemKeeperDB.profiles[i], i
+    end
+  end
+  return nil, nil
+end
+
+function CK:GetCurrentProfile()
+  local profile = self:GetProfileById(ChemKeeperDB.selectedProfileId)
+  if profile then
+    return profile
+  end
+  return ChemKeeperDB.profiles and ChemKeeperDB.profiles[1] or nil
+end
+
+function CK:GetActiveItemsTable()
+  local profile = self:GetCurrentProfile()
+  if not profile.items then
+    profile.items = {}
+  end
+  return profile.items
+end
+
+function CK:GetSuggestedProfileName()
+  local nextNumber = 1
+  local used = {}
+  local i
+
+  for i = 1, table.getn(ChemKeeperDB.profiles or {}) do
+    local name = ChemKeeperDB.profiles[i].name or ""
+    local _, _, num = string.find(name, "^Profile(%d+)$")
+    if num then
+      used[tonumber(num)] = 1
+    end
+  end
+
+  while used[nextNumber] do
+    nextNumber = nextNumber + 1
+  end
+
+  return "Profile" .. nextNumber
+end
+
+function CK:SelectProfile(profileId)
+  local profile = self:GetProfileById(profileId)
+  if not profile then
+    return
+  end
+
+  ChemKeeperDB.selectedProfileId = profile.id
+  self:ScanInventories()
+  self:RefreshAll()
+end
+
+function CK:CycleProfile(step)
+  local _, currentIndex = self:GetProfileById(ChemKeeperDB.selectedProfileId)
+  if not currentIndex then
+    currentIndex = 1
+  end
+
+  local total = table.getn(ChemKeeperDB.profiles)
+  if total == 0 then
+    return
+  end
+
+  currentIndex = currentIndex + step
+  if currentIndex < 1 then
+    currentIndex = total
+  elseif currentIndex > total then
+    currentIndex = 1
+  end
+
+  self:SelectProfile(ChemKeeperDB.profiles[currentIndex].id)
+end
+
+function CK:CreateProfile(name)
+  local profile = {
+    id = ChemKeeperDB.nextProfileId,
+    name = name or self:GetSuggestedProfileName(),
+    items = {},
+  }
+  ChemKeeperDB.nextProfileId = ChemKeeperDB.nextProfileId + 1
+  table.insert(ChemKeeperDB.profiles, profile)
+  ChemKeeperDB.selectedProfileId = profile.id
+  self:RefreshAll()
+end
+
+function CK:RenameCurrentProfile(name)
+  name = string.gsub(name or "", "^%s+", "")
+  name = string.gsub(name, "%s+$", "")
+  if name == "" then
+    return
+  end
+
+  local profile = self:GetCurrentProfile()
+  if not profile then
+    return
+  end
+
+  profile.name = name
+  self:RefreshProfileControls()
+end
+
+function CK:DeleteCurrentProfile()
+  if table.getn(ChemKeeperDB.profiles) <= 1 then
+    self:Print("You cannot delete the last profile.")
+    return
+  end
+
+  local profile, index = self:GetProfileById(ChemKeeperDB.selectedProfileId)
+  if not profile then
+    return
+  end
+
+  table.remove(ChemKeeperDB.profiles, index)
+  if ChemKeeperDB.profiles[index] then
+    ChemKeeperDB.selectedProfileId = ChemKeeperDB.profiles[index].id
+  else
+    ChemKeeperDB.selectedProfileId = ChemKeeperDB.profiles[index - 1].id
+  end
+  self:RefreshAll()
+end
+
+function CK:ConfirmDeleteCurrentProfile()
+  local profile = self:GetCurrentProfile()
+  if not profile then
+    return
+  end
+
+  StaticPopup_Show("CHEMKEEPER_DELETE_PROFILE", profile.name or "this profile")
+end
+
 function CK:IsItemActive(itemID)
   itemID = tonumber(itemID)
+  local items = self:GetActiveItemsTable()
   local i
-  for i = 1, table.getn(ChemKeeperDB.activeItems) do
-    if tonumber(ChemKeeperDB.activeItems[i].itemID) == itemID then
+  for i = 1, table.getn(items) do
+    if tonumber(items[i].itemID) == itemID then
       return true, i
     end
   end
@@ -286,11 +637,12 @@ end
 
 function CK:GetActiveItemsSorted()
   local list = {}
+  local items = self:GetActiveItemsTable()
   local i
-  for i = 1, table.getn(ChemKeeperDB.activeItems) do
+  for i = 1, table.getn(items) do
     list[i] = {
-      itemID = tonumber(ChemKeeperDB.activeItems[i].itemID),
-      target = tonumber(ChemKeeperDB.activeItems[i].target) or 0,
+      itemID = tonumber(items[i].itemID),
+      target = tonumber(items[i].target) or 0,
     }
   end
 
@@ -387,7 +739,7 @@ function CK:AddActiveItem(itemID)
   if self:IsItemActive(itemID) then
     return
   end
-  table.insert(ChemKeeperDB.activeItems, { itemID = itemID, target = 0 })
+  table.insert(self:GetActiveItemsTable(), { itemID = itemID, target = 0 })
   self:RefreshAll()
 end
 
@@ -396,7 +748,7 @@ function CK:RemoveActiveItem(itemID)
   if not found then
     return
   end
-  table.remove(ChemKeeperDB.activeItems, index)
+  table.remove(self:GetActiveItemsTable(), index)
   self:RefreshAll()
 end
 
@@ -406,7 +758,7 @@ function CK:SetTargetForItem(itemID, target)
   if not found then
     return
   end
-  ChemKeeperDB.activeItems[index].target = clampNumber(target or 0, 0, 999)
+  self:GetActiveItemsTable()[index].target = clampNumber(target or 0, 0, 999)
   self:RefreshAll()
 end
 
@@ -470,6 +822,43 @@ function CK:CreatePanelBox(parent, left, top, right, bottom, bgR, bgG, bgB)
   topLine:SetTexture(0.78, 0.67, 0.25, 0.55)
 
   return box
+end
+
+function CK:CreateInsetArea(parent, left, top, right, bottom, bgR, bgG, bgB)
+  local area = CreateFrame("Frame", nil, parent)
+  area:SetPoint("TOPLEFT", parent, "TOPLEFT", left, top)
+  area:SetPoint("BOTTOMRIGHT", parent, "TOPLEFT", right, bottom)
+
+  local bg = area:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(area)
+  bg:SetTexture(bgR or 0.095, bgG or 0.105, bgB or 0.13, 1)
+  area.bg = bg
+
+  local borderTop = area:CreateTexture(nil, "BORDER")
+  borderTop:SetPoint("TOPLEFT", area, "TOPLEFT", 0, 0)
+  borderTop:SetPoint("TOPRIGHT", area, "TOPRIGHT", 0, 0)
+  borderTop:SetHeight(1)
+  borderTop:SetTexture(0.32, 0.34, 0.4, 0.75)
+
+  local borderBottom = area:CreateTexture(nil, "BORDER")
+  borderBottom:SetPoint("BOTTOMLEFT", area, "BOTTOMLEFT", 0, 0)
+  borderBottom:SetPoint("BOTTOMRIGHT", area, "BOTTOMRIGHT", 0, 0)
+  borderBottom:SetHeight(1)
+  borderBottom:SetTexture(0.05, 0.06, 0.08, 0.9)
+
+  local borderLeft = area:CreateTexture(nil, "BORDER")
+  borderLeft:SetPoint("TOPLEFT", area, "TOPLEFT", 0, 0)
+  borderLeft:SetPoint("BOTTOMLEFT", area, "BOTTOMLEFT", 0, 0)
+  borderLeft:SetWidth(1)
+  borderLeft:SetTexture(0.32, 0.34, 0.4, 0.75)
+
+  local borderRight = area:CreateTexture(nil, "BORDER")
+  borderRight:SetPoint("TOPRIGHT", area, "TOPRIGHT", 0, 0)
+  borderRight:SetPoint("BOTTOMRIGHT", area, "BOTTOMRIGHT", 0, 0)
+  borderRight:SetWidth(1)
+  borderRight:SetTexture(0.05, 0.06, 0.08, 0.9)
+
+  return area
 end
 
 function CK:StyleInputBox(box, width, height)
@@ -667,6 +1056,28 @@ function CK:HandleEscapeInput(box, refreshRows)
   end
 end
 
+function CK:CommitProfileName()
+  if not self.mainFrame or not self.mainFrame.profileNameBox then
+    return
+  end
+  self:RenameCurrentProfile(self.mainFrame.profileNameBox:GetText())
+end
+
+function CK:RefreshProfileControls()
+  if not self.mainFrame or not self.mainFrame.profileNameBox then
+    return
+  end
+
+  local profile = self:GetCurrentProfile()
+  local _, profileIndex = self:GetProfileById(profile and profile.id)
+  if not profile then
+    return
+  end
+
+  self.mainFrame.profileNameBox:SetText(profile.name or "")
+  self.mainFrame.profileStatus:SetText("Profile " .. (profileIndex or 1) .. " / " .. table.getn(ChemKeeperDB.profiles))
+end
+
 function CK:CreateMainFrame()
   local frame = CreateFrame("Frame", "ChemKeeperMainFrame", UIParent)
   frame:SetWidth(ChemKeeperDB.window.width)
@@ -698,19 +1109,19 @@ function CK:CreateMainFrame()
   local headerBg = frame:CreateTexture(nil, "BACKGROUND")
   headerBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
   headerBg:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -6, -6)
-  headerBg:SetHeight(58)
+  headerBg:SetHeight(86)
   headerBg:SetTexture(0.16, 0.18, 0.22, 1)
   frame.headerBg = headerBg
 
   local bodyBg = frame:CreateTexture(nil, "BACKGROUND")
-  bodyBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -66)
+  bodyBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -94)
   bodyBg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -6, 6)
   bodyBg:SetTexture(0.12, 0.13, 0.16, 1)
   frame.bodyBg = bodyBg
 
   local accent = frame:CreateTexture(nil, "ARTWORK")
-  accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -60)
-  accent:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -60)
+  accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -88)
+  accent:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -88)
   accent:SetHeight(2)
   accent:SetTexture(0.79, 0.68, 0.24, 0.9)
   frame.accent = accent
@@ -756,13 +1167,81 @@ function CK:CreateMainFrame()
   end)
   frame.overviewTab = overviewTab
 
+  local profileLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  profileLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -60)
+  profileLabel:SetTextColor(0.95, 0.82, 0.28)
+  profileLabel:SetText("Profile")
+  frame.profileLabel = profileLabel
+
+  local prevProfile = CreateFrame("Button", nil, frame, "GameMenuButtonTemplate")
+  prevProfile:SetWidth(24)
+  prevProfile:SetHeight(20)
+  prevProfile:SetPoint("LEFT", profileLabel, "RIGHT", 8, 0)
+  prevProfile:SetText("<")
+  prevProfile:SetScript("OnClick", function()
+    CK:CycleProfile(-1)
+  end)
+  frame.prevProfile = prevProfile
+
+  local nextProfile = CreateFrame("Button", nil, frame, "GameMenuButtonTemplate")
+  nextProfile:SetWidth(24)
+  nextProfile:SetHeight(20)
+  nextProfile:SetPoint("LEFT", prevProfile, "RIGHT", 4, 0)
+  nextProfile:SetText(">")
+  nextProfile:SetScript("OnClick", function()
+    CK:CycleProfile(1)
+  end)
+  frame.nextProfile = nextProfile
+
+  local profileNameBox = CreateFrame("EditBox", nil, frame)
+  self:StyleInputBox(profileNameBox, 160, 20)
+  profileNameBox:SetPoint("LEFT", nextProfile, "RIGHT", 8, 0)
+  profileNameBox:SetJustifyH("LEFT")
+  profileNameBox:SetScript("OnEnterPressed", function()
+    CK:CommitProfileName()
+    this:ClearFocus()
+  end)
+  profileNameBox:SetScript("OnEditFocusLost", function()
+    CK:CommitProfileName()
+  end)
+  profileNameBox:SetScript("OnEscapePressed", function()
+    CK:HandleEscapeInput(this, nil)
+  end)
+  frame.profileNameBox = profileNameBox
+
+  local newProfile = CreateFrame("Button", nil, frame, "GameMenuButtonTemplate")
+  newProfile:SetWidth(52)
+  newProfile:SetHeight(20)
+  newProfile:SetPoint("LEFT", profileNameBox, "RIGHT", 8, 0)
+  newProfile:SetText("New")
+  newProfile:SetScript("OnClick", function()
+    CK:CreateProfile()
+  end)
+  frame.newProfile = newProfile
+
+  local deleteProfile = CreateFrame("Button", nil, frame, "GameMenuButtonTemplate")
+  deleteProfile:SetWidth(60)
+  deleteProfile:SetHeight(20)
+  deleteProfile:SetPoint("LEFT", newProfile, "RIGHT", 6, 0)
+  deleteProfile:SetText("Delete")
+  deleteProfile:SetScript("OnClick", function()
+    CK:ConfirmDeleteCurrentProfile()
+  end)
+  frame.deleteProfile = deleteProfile
+
+  local profileStatus = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  profileStatus:SetPoint("LEFT", deleteProfile, "RIGHT", 10, 0)
+  profileStatus:SetTextColor(0.76, 0.8, 0.86)
+  profileStatus:SetText("")
+  frame.profileStatus = profileStatus
+
   local editPanel = CreateFrame("Frame", nil, frame)
-  editPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -74)
+  editPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -116)
   editPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
   frame.editPanel = editPanel
 
   local overviewPanel = CreateFrame("Frame", nil, frame)
-  overviewPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -74)
+  overviewPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -116)
   overviewPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
   frame.overviewPanel = overviewPanel
 
@@ -771,12 +1250,13 @@ function CK:CreateMainFrame()
   self:CreateEditPanel(editPanel)
   self:CreateOverviewPanel(overviewPanel)
   self:SetView("edit")
+  self:RefreshProfileControls()
 end
 
 function CK:CreateEditPanel(panel)
-  panel.activeBox = self:CreatePanelBox(panel, 0, 0, 352, -470, 0.12, 0.13, 0.16)
-  panel.catalogBox = self:CreatePanelBox(panel, 368, 0, 722, -318, 0.11, 0.125, 0.15)
-  panel.customBox = self:CreatePanelBox(panel, 368, -332, 722, -470, 0.11, 0.12, 0.145)
+  panel.activeBox = self:CreatePanelBox(panel, 0, 0, 392, -490, 0.12, 0.13, 0.16)
+  panel.catalogBox = self:CreatePanelBox(panel, 408, 0, 832, -320, 0.11, 0.125, 0.15)
+  panel.customBox = self:CreatePanelBox(panel, 408, -336, 832, -490, 0.11, 0.12, 0.145)
 
   self:CreateSectionLabel(panel.activeBox, "Tracked Consumables", 10, -8)
 
@@ -785,25 +1265,35 @@ function CK:CreateEditPanel(panel)
   activeHint:SetTextColor(0.76, 0.8, 0.86)
   activeHint:SetText("Set your desired amount for each consumable.")
 
-  local activeScroll = CreateFrame("ScrollFrame", "ChemKeeperActiveScroll", panel.activeBox, "FauxScrollFrameTemplate")
-  activeScroll:SetWidth(340)
-  activeScroll:SetHeight(400)
-  activeScroll:SetPoint("TOPLEFT", panel.activeBox, "TOPLEFT", 2, -52)
+  local activeRowsBox = self:CreateInsetArea(panel.activeBox, 8, -52, 380, -488, 0.095, 0.105, 0.13)
+  panel.activeRowsBox = activeRowsBox
+
+  local activeScroll = CreateFrame("ScrollFrame", "ChemKeeperActiveScroll", panel.activeRowsBox, "FauxScrollFrameTemplate")
+  activeScroll:SetWidth(336)
+  activeScroll:SetHeight(ACTIVE_VISIBLE_ROWS * ACTIVE_ROW_HEIGHT)
+  activeScroll:SetPoint("TOPLEFT", panel.activeRowsBox, "TOPLEFT", 8, -8)
   activeScroll:SetScript("OnVerticalScroll", function()
-    FauxScrollFrame_OnVerticalScroll(16, function()
+    FauxScrollFrame_OnVerticalScroll(ACTIVE_ROW_HEIGHT, function()
       CK:RefreshActiveRows()
     end)
   end)
   panel.activeScroll = activeScroll
 
+  local activeBar = getglobal("ChemKeeperActiveScrollScrollBar")
+  if activeBar then
+    activeBar:ClearAllPoints()
+    activeBar:SetPoint("TOPRIGHT", panel.activeRowsBox, "TOPRIGHT", -8, -16)
+    activeBar:SetPoint("BOTTOMRIGHT", panel.activeRowsBox, "BOTTOMRIGHT", -8, 16)
+  end
+
   panel.activeRows = {}
 
   local i
-  for i = 1, 12 do
-    local row = CreateFrame("Frame", nil, panel.activeBox)
-    row:SetWidth(320)
+  for i = 1, ACTIVE_VISIBLE_ROWS do
+    local row = CreateFrame("Frame", nil, panel.activeRowsBox)
+    row:SetWidth(334)
     row:SetHeight(20)
-    row:SetPoint("TOPLEFT", panel.activeBox, "TOPLEFT", 10, -56 - ((i - 1) * 24))
+    row:SetPoint("TOPLEFT", panel.activeRowsBox, "TOPLEFT", 8, -10 - ((i - 1) * ACTIVE_ROW_HEIGHT))
 
     if math.mod(i, 2) == 0 then
       local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -832,7 +1322,7 @@ function CK:CreateEditPanel(panel)
     row.iconButton = iconButton
 
     local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    name:SetWidth(170)
+    name:SetWidth(182)
     name:SetJustifyH("LEFT")
     name:SetPoint("LEFT", 26, 0)
     name:SetTextColor(0.92, 0.94, 0.98)
@@ -842,7 +1332,7 @@ function CK:CreateEditPanel(panel)
     self:StyleInputBox(target, 48, 20)
     target:SetNumeric(true)
     target:SetMaxLetters(3)
-    target:SetPoint("LEFT", 218, 0)
+    target:SetPoint("LEFT", 216, 0)
     target:SetScript("OnEnterPressed", function()
       CK:CommitTargetBox(this)
     end)
@@ -857,7 +1347,7 @@ function CK:CreateEditPanel(panel)
     local remove = CreateFrame("Button", nil, row, "GameMenuButtonTemplate")
     remove:SetWidth(52)
     remove:SetHeight(18)
-    remove:SetPoint("LEFT", 272, 0)
+    remove:SetPoint("LEFT", 274, 0)
     remove:SetText("Remove")
     remove:SetScript("OnClick", function()
       CK:RemoveActiveItem(this.itemID)
@@ -870,14 +1360,14 @@ function CK:CreateEditPanel(panel)
   self:CreateSectionLabel(panel.catalogBox, "Catalog", 10, -8)
 
   local catalogHint = panel.catalogBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  catalogHint:SetWidth(320)
+  catalogHint:SetWidth(388)
   catalogHint:SetJustifyH("LEFT")
   catalogHint:SetPoint("TOPLEFT", panel.catalogBox, "TOPLEFT", 10, -30)
   catalogHint:SetTextColor(0.76, 0.8, 0.86)
   catalogHint:SetText("Preset consumables you can add to your tracked list.")
 
   local catalogFilterBox = CreateFrame("EditBox", nil, panel.catalogBox)
-  self:StyleInputBox(catalogFilterBox, 180, 20)
+  self:StyleInputBox(catalogFilterBox, 220, 20)
   catalogFilterBox:SetPoint("TOPLEFT", panel.catalogBox, "TOPLEFT", 10, -52)
   catalogFilterBox:SetJustifyH("LEFT")
   catalogFilterBox:SetText("")
@@ -890,17 +1380,20 @@ function CK:CreateEditPanel(panel)
   panel.catalogFilterBox = catalogFilterBox
 
   local catalogFilterLabel = panel.catalogBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  catalogFilterLabel:SetWidth(136)
+  catalogFilterLabel:SetWidth(160)
   catalogFilterLabel:SetJustifyH("LEFT")
   catalogFilterLabel:SetJustifyV("MIDDLE")
   catalogFilterLabel:SetPoint("LEFT", catalogFilterBox, "RIGHT", 8, 0)
   catalogFilterLabel:SetTextColor(0.72, 0.76, 0.82)
   catalogFilterLabel:SetText("Filter by name or category")
 
-  local catalogScroll = CreateFrame("ScrollFrame", "ChemKeeperCatalogScroll", panel.catalogBox, "FauxScrollFrameTemplate")
-  catalogScroll:SetWidth(350)
-  catalogScroll:SetHeight(228)
-  catalogScroll:SetPoint("TOPLEFT", panel.catalogBox, "TOPLEFT", 2, -82)
+  local catalogRowsBox = self:CreateInsetArea(panel.catalogBox, 8, -82, 412, -312, 0.095, 0.105, 0.13)
+  panel.catalogRowsBox = catalogRowsBox
+
+  local catalogScroll = CreateFrame("ScrollFrame", "ChemKeeperCatalogScroll", panel.catalogRowsBox, "FauxScrollFrameTemplate")
+  catalogScroll:SetWidth(360)
+  catalogScroll:SetHeight(216)
+  catalogScroll:SetPoint("TOPLEFT", panel.catalogRowsBox, "TOPLEFT", 8, -8)
   catalogScroll:SetScript("OnVerticalScroll", function()
     FauxScrollFrame_OnVerticalScroll(CATALOG_ROW_HEIGHT, function()
       CK:RefreshCatalogRows()
@@ -908,13 +1401,20 @@ function CK:CreateEditPanel(panel)
   end)
   panel.catalogScroll = catalogScroll
 
+  local catalogBar = getglobal("ChemKeeperCatalogScrollScrollBar")
+  if catalogBar then
+    catalogBar:ClearAllPoints()
+    catalogBar:SetPoint("TOPRIGHT", panel.catalogRowsBox, "TOPRIGHT", -8, -16)
+    catalogBar:SetPoint("BOTTOMRIGHT", panel.catalogRowsBox, "BOTTOMRIGHT", -8, 16)
+  end
+
   panel.catalogRows = {}
 
   for i = 1, 7 do
-    local row = CreateFrame("Frame", nil, panel.catalogBox)
-    row:SetWidth(336)
+    local row = CreateFrame("Frame", nil, panel.catalogRowsBox)
+    row:SetWidth(342)
     row:SetHeight(CATALOG_ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", panel.catalogBox, "TOPLEFT", 10, -86 - ((i - 1) * CATALOG_ROW_HEIGHT))
+    row:SetPoint("TOPLEFT", panel.catalogRowsBox, "TOPLEFT", 8, -10 - ((i - 1) * CATALOG_ROW_HEIGHT))
 
     if math.mod(i, 2) == 0 then
       local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -952,18 +1452,18 @@ function CK:CreateEditPanel(panel)
     row.name = name
 
     local category = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    category:SetWidth(78)
+    category:SetWidth(64)
     category:SetHeight(CATALOG_ROW_HEIGHT - 4)
     category:SetJustifyH("LEFT")
     category:SetJustifyV("MIDDLE")
-    category:SetPoint("LEFT", 198, 0)
+    category:SetPoint("LEFT", 196, 0)
     category:SetTextColor(0.72, 0.76, 0.82)
     row.category = category
 
     local add = CreateFrame("Button", nil, row, "GameMenuButtonTemplate")
     add:SetWidth(48)
     add:SetHeight(20)
-    add:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    add:SetPoint("LEFT", 278, 0)
     add:SetText("Add")
     add:SetScript("OnClick", function()
       CK:AddTrackedItem(this.itemID)
@@ -976,14 +1476,14 @@ function CK:CreateEditPanel(panel)
   self:CreateSectionLabel(panel.customBox, "Add Custom Item", 10, -8)
 
   local addHint = panel.customBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  addHint:SetWidth(320)
+  addHint:SetWidth(388)
   addHint:SetJustifyH("LEFT")
   addHint:SetPoint("TOPLEFT", panel.customBox, "TOPLEFT", 10, -30)
   addHint:SetTextColor(0.76, 0.8, 0.86)
   addHint:SetText("Shift-click an item link or type an item ID.")
 
   local addBox = CreateFrame("EditBox", "ChemKeeperAddItemBox", panel.customBox)
-  self:StyleInputBox(addBox, 220, 20)
+  self:StyleInputBox(addBox, 260, 20)
   addBox:SetPoint("TOPLEFT", panel.customBox, "TOPLEFT", 10, -62)
   addBox:SetScript("OnEditFocusGained", function()
     CK.linkCaptureBox = this
@@ -1012,7 +1512,7 @@ function CK:CreateEditPanel(panel)
   panel.addButton = addButton
 
   local addStatus = panel.customBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  addStatus:SetWidth(320)
+  addStatus:SetWidth(388)
   addStatus:SetJustifyH("LEFT")
   addStatus:SetPoint("TOPLEFT", addBox, "BOTTOMLEFT", 0, -10)
   addStatus:SetTextColor(0.85, 0.88, 0.92)
@@ -1020,7 +1520,7 @@ function CK:CreateEditPanel(panel)
   panel.addStatus = addStatus
 
   local note = panel.customBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  note:SetWidth(320)
+  note:SetWidth(388)
   note:SetJustifyH("LEFT")
   note:SetPoint("TOPLEFT", addStatus, "BOTTOMLEFT", 0, -8)
   note:SetTextColor(0.68, 0.72, 0.78)
@@ -1028,7 +1528,7 @@ function CK:CreateEditPanel(panel)
 end
 
 function CK:CreateOverviewPanel(panel)
-  panel.listBox = self:CreatePanelBox(panel, 0, 0, 722, -470, 0.11, 0.125, 0.15)
+  panel.listBox = self:CreatePanelBox(panel, 0, 0, 832, -490, 0.11, 0.125, 0.15)
   self:CreateSectionLabel(panel.listBox, "Stock Overview", 10, -8)
 
   local hint = panel.listBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1043,10 +1543,10 @@ function CK:CreateOverviewPanel(panel)
 
   local headers = {
     { text = "Item", x = 34 },
-    { text = "Target", x = 360 },
-    { text = "Bags", x = 440 },
-    { text = "Bank", x = 500 },
-    { text = "Missing", x = 560 },
+    { text = "Target", x = 420 },
+    { text = "Bags", x = 510 },
+    { text = "Bank", x = 585 },
+    { text = "Missing", x = 660 },
   }
 
   local i
@@ -1078,24 +1578,34 @@ function CK:CreateOverviewPanel(panel)
   end)
   panel.withdrawButton = withdrawButton
 
-  local scroll = CreateFrame("ScrollFrame", "ChemKeeperOverviewScroll", panel.listBox, "FauxScrollFrameTemplate")
-  scroll:SetWidth(720)
-  scroll:SetHeight(372)
-  scroll:SetPoint("TOPLEFT", panel.listBox, "TOPLEFT", 2, -70)
+  local rowsBox = self:CreateInsetArea(panel.listBox, 8, -66, 822, -454, 0.095, 0.105, 0.13)
+  panel.rowsBox = rowsBox
+
+  local scroll = CreateFrame("ScrollFrame", "ChemKeeperOverviewScroll", panel.rowsBox, "FauxScrollFrameTemplate")
+  scroll:SetWidth(786)
+  scroll:SetHeight(OVERVIEW_VISIBLE_ROWS * OVERVIEW_ROW_HEIGHT)
+  scroll:SetPoint("TOPLEFT", panel.rowsBox, "TOPLEFT", 8, -8)
   scroll:SetScript("OnVerticalScroll", function()
-    FauxScrollFrame_OnVerticalScroll(16, function()
+    FauxScrollFrame_OnVerticalScroll(OVERVIEW_ROW_HEIGHT, function()
       CK:RefreshOverviewRows()
     end)
   end)
   panel.scroll = scroll
 
+  local overviewBar = getglobal("ChemKeeperOverviewScrollScrollBar")
+  if overviewBar then
+    overviewBar:ClearAllPoints()
+    overviewBar:SetPoint("TOPRIGHT", panel.rowsBox, "TOPRIGHT", -8, -16)
+    overviewBar:SetPoint("BOTTOMRIGHT", panel.rowsBox, "BOTTOMRIGHT", -8, 16)
+  end
+
   panel.rows = {}
 
-  for i = 1, 20 do
-    local row = CreateFrame("Frame", nil, panel.listBox)
-    row:SetWidth(706)
-    row:SetHeight(20)
-    row:SetPoint("TOPLEFT", panel.listBox, "TOPLEFT", 10, -72 - ((i - 1) * 18))
+  for i = 1, OVERVIEW_VISIBLE_ROWS do
+    local row = CreateFrame("Frame", nil, panel.rowsBox)
+    row:SetWidth(768)
+    row:SetHeight(OVERVIEW_ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", panel.rowsBox, "TOPLEFT", 8, -10 - ((i - 1) * OVERVIEW_ROW_HEIGHT))
 
     if math.mod(i, 2) == 0 then
       local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -1124,7 +1634,7 @@ function CK:CreateOverviewPanel(panel)
     row.iconButton = iconButton
 
     local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    name:SetWidth(310)
+    name:SetWidth(360)
     name:SetJustifyH("LEFT")
     name:SetPoint("LEFT", 26, 0)
     name:SetTextColor(0.92, 0.94, 0.98)
@@ -1133,25 +1643,25 @@ function CK:CreateOverviewPanel(panel)
     local target = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     target:SetWidth(55)
     target:SetJustifyH("LEFT")
-    target:SetPoint("LEFT", 360, 0)
+    target:SetPoint("LEFT", 420, 0)
     row.target = target
 
     local bags = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bags:SetWidth(45)
     bags:SetJustifyH("LEFT")
-    bags:SetPoint("LEFT", 440, 0)
+    bags:SetPoint("LEFT", 510, 0)
     row.bags = bags
 
     local bank = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bank:SetWidth(45)
     bank:SetJustifyH("LEFT")
-    bank:SetPoint("LEFT", 500, 0)
+    bank:SetPoint("LEFT", 585, 0)
     row.bank = bank
 
     local missing = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     missing:SetWidth(60)
     missing:SetJustifyH("LEFT")
-    missing:SetPoint("LEFT", 560, 0)
+    missing:SetPoint("LEFT", 660, 0)
     row.missing = missing
 
     panel.rows[i] = row
@@ -1252,24 +1762,31 @@ function CK:BuildCountsForBagRange(startBag, endBag)
     local numSlots = GetContainerNumSlots(bag)
     if numSlots and numSlots > 0 then
       local slot
-      for slot = 1, numSlots do
-        local link = GetContainerItemLink(bag, slot)
-        if link then
-          local itemID = parseItemIDFromLink(link)
-          local texture, count, locked = GetContainerItemInfo(bag, slot)
-          count = count or 1
+        for slot = 1, numSlots do
+          local link = GetContainerItemLink(bag, slot)
+          if link then
+            local itemID = parseItemIDFromLink(link)
+            local texture, count, locked = GetContainerItemInfo(bag, slot)
+            count = count or 1
 
-          if itemID then
-            self:RememberItemMeta(itemID, GetItemInfo(itemID), texture, self:GetItemStackSize(itemID))
-            counts[itemID] = (counts[itemID] or 0) + count
-            if not slots[itemID] then
-              slots[itemID] = {}
+            if itemID then
+              local logicalCount = self:GetLogicalItemCount(itemID, count)
+              self:RememberItemMeta(itemID, GetItemInfo(itemID), texture, self:GetItemStackSize(itemID))
+              counts[itemID] = (counts[itemID] or 0) + logicalCount
+              if not slots[itemID] then
+                slots[itemID] = {}
+              end
+              table.insert(slots[itemID], {
+                bag = bag,
+                slot = slot,
+                count = logicalCount,
+                rawCount = count,
+                locked = locked,
+              })
             end
-            table.insert(slots[itemID], { bag = bag, slot = slot, count = count, locked = locked })
+          else
+            table.insert(empties, { bag = bag, slot = slot })
           end
-        else
-          table.insert(empties, { bag = bag, slot = slot })
-        end
       end
     end
   end
@@ -1335,7 +1852,12 @@ end
 function CK:RefreshActiveRows()
   local list = self:GetActiveItemsSorted()
   local offset = FauxScrollFrame_GetOffset(self.mainFrame.editPanel.activeScroll)
-  FauxScrollFrame_Update(self.mainFrame.editPanel.activeScroll, table.getn(list), table.getn(self.mainFrame.editPanel.activeRows), 20)
+  FauxScrollFrame_Update(
+    self.mainFrame.editPanel.activeScroll,
+    table.getn(list),
+    table.getn(self.mainFrame.editPanel.activeRows),
+    ACTIVE_ROW_HEIGHT
+  )
 
   local i
   for i = 1, table.getn(self.mainFrame.editPanel.activeRows) do
@@ -1386,7 +1908,12 @@ end
 function CK:RefreshOverviewRows()
   local list = self:GetActiveItemsSorted()
   local offset = FauxScrollFrame_GetOffset(self.mainFrame.overviewPanel.scroll)
-  FauxScrollFrame_Update(self.mainFrame.overviewPanel.scroll, table.getn(list), table.getn(self.mainFrame.overviewPanel.rows), 20)
+  FauxScrollFrame_Update(
+    self.mainFrame.overviewPanel.scroll,
+    table.getn(list),
+    table.getn(self.mainFrame.overviewPanel.rows),
+    OVERVIEW_ROW_HEIGHT
+  )
 
   local i
   for i = 1, table.getn(self.mainFrame.overviewPanel.rows) do
@@ -1438,6 +1965,7 @@ function CK:RefreshAll()
   if not self.mainFrame then
     return
   end
+  self:RefreshProfileControls()
   self:RefreshActiveRows()
   self:RefreshCatalogRows()
   self:RefreshOverviewRows()
@@ -1560,7 +2088,8 @@ function CK:RunNextWithdrawOperation()
   local op = self.withdrawQueue[1]
   local _, sourceCount, sourceLocked = GetContainerItemInfo(op.sourceBag, op.sourceSlot)
   sourceCount = sourceCount or 0
-  if sourceCount <= 0 then
+  local sourceLogicalCount = self:GetLogicalItemCount(op.itemID, sourceCount)
+  if sourceLogicalCount <= 0 then
     table.remove(self.withdrawQueue, 1)
     return
   end
@@ -1568,6 +2097,8 @@ function CK:RunNextWithdrawOperation()
   local destLink = GetContainerItemLink(op.destBag, op.destSlot)
   local _, destCount, destLocked = GetContainerItemInfo(op.destBag, op.destSlot)
   local destID = parseItemIDFromLink(destLink)
+  local destLogicalCount = self:GetLogicalItemCount(op.itemID, destCount)
+  local stackSize = self:GetItemStackSize(op.itemID)
 
   if sourceLocked or destLocked then
     return
@@ -1579,16 +2110,16 @@ function CK:RunNextWithdrawOperation()
     return
   end
 
-  if destLink and (destCount or 0) >= self:GetItemStackSize(op.itemID) then
+  if destLink and destLogicalCount >= stackSize then
     table.remove(self.withdrawQueue, 1)
     return
   end
 
-  if op.count > sourceCount then
-    op.count = sourceCount
+  if op.count > sourceLogicalCount then
+    op.count = sourceLogicalCount
   end
 
-  if op.count < sourceCount then
+  if stackSize > 1 and op.count < sourceLogicalCount then
     SplitContainerItem(op.sourceBag, op.sourceSlot, op.count)
   else
     PickupContainerItem(op.sourceBag, op.sourceSlot)
@@ -1689,6 +2220,18 @@ end
 function CK:CreateQueueFrame()
   self.queueFrame = CreateFrame("Frame", "ChemKeeperQueueFrame", UIParent)
 end
+
+StaticPopupDialogs["CHEMKEEPER_DELETE_PROFILE"] = {
+  text = "Delete profile \"%s\"?",
+  button1 = "Delete",
+  button2 = "Cancel",
+  OnAccept = function()
+    CK:DeleteCurrentProfile()
+  end,
+  timeout = 0,
+  whileDead = 1,
+  hideOnEscape = 1,
+}
 
 SLASH_CHEMKEEPER1 = "/chemkeeper"
 SLASH_CHEMKEEPER2 = "/ck"
