@@ -1,0 +1,8 @@
+## Interface: 11200
+## Title: |cff6bd1ffChemKeeper
+## Notes: Raid consumable planner for BELUGA - track stock and withdraw missing supplies from your bank.
+## Author: Eggorkus - BELUGA, Nordanaar
+## Version: 0.1.0
+## SavedVariables: ChemKeeperDB
+
+ChemKeeper.lua
